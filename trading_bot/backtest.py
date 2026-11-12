@@ -85,8 +85,9 @@ def save(eq: pd.Series, trades: pd.DataFrame, out: Path) -> None:
 def fmt(m: dict) -> str:
     lines = []
     for k, v in m.items():
-        if isinstance(v, float) and k in {"total_return", "cagr", "max_drawdown", "win_rate", "exposure"}:
-            v = f"{v:.1%}" if k in ("win_rate", "exposure") else f"{v:+.2%}"
+        if isinstance(v, float) and k in {"total_return", "cagr", "max_drawdown", "win_rate", "exposure",
+                                         "vol", "worst_year", "avg_invested", "turnover_per_year"}:
+            v = f"{v:.1%}" if k in ("win_rate", "exposure", "vol", "avg_invested", "turnover_per_year") else f"{v:+.2%}"
         elif isinstance(v, float):
             v = f"{v:,.2f}"
         lines.append(f"  {k:<14} {v}")

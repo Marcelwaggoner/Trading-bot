@@ -24,6 +24,18 @@ def main() -> None:
                     help="override options.structure from the config")
     bt.add_argument("-v", "--verbose", action="store_true", help="print every signal and fill")
 
+    tr = sub.add_parser("trend", help="backtest a monthly trend-following portfolio")
+    tr.add_argument("--rule", choices=["sma", "momentum", "equal"], default="sma")
+    tr.add_argument("--symbols", default="SPY,EFA,EEM,TLT,IEF,GLD,DBC,VNQ")
+    tr.add_argument("--sma", type=int, default=200)
+    tr.add_argument("--lookback", type=int, default=252, help="momentum lookback in trading days")
+    tr.add_argument("--top", type=int, default=3)
+    tr.add_argument("--cost-bps", type=float, default=5.0)
+    tr.add_argument("--start", default="2007-03-01")
+    tr.add_argument("--end")
+    tr.add_argument("--refresh", action="store_true")
+    tr.add_argument("--out", default="results")
+
     pp = sub.add_parser("paper", help="advance the paper-trading ledger to the latest close")
     pp.add_argument("--ledger", default="paper/ledger.json")
     pp.add_argument("--quotes", help="JSON {position label: real option mid} to mark with live prices")
@@ -49,6 +61,26 @@ def main() -> None:
         print(backtest.fmt(backtest.benchmark(frames, eq, cfg.symbols[0])))
         backtest.save(eq, trades, Path(args.out))
         print(f"\nWrote {args.out}/equity.csv and {args.out}/trades.csv")
+    elif args.cmd == "trend":
+        from . import trend
+
+        p = trend.TrendParams(args.rule, args.sma, args.lookback, args.top, args.cost_bps)
+        syms = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+        equity, targets, m = trend.run(syms, p, args.start, args.end, args.refresh)
+        print(f"Trend ({args.rule}, {', '.join(syms)}):")
+        print(backtest.fmt(m))
+        bench = trend.run(["SPY"], trend.TrendParams("equal", cost_bps=args.cost_bps),
+                          m["start"], args.end)[2]
+        print("Benchmark (buy & hold SPY):")
+        print(backtest.fmt({k: bench[k] for k in ("cagr", "max_drawdown", "sharpe", "sortino", "worst_year")}))
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        equity.to_csv(out / "trend_equity.csv")
+        targets.to_csv(out / "trend_weights.csv")
+        print(f"\nLatest target weights ({targets.index[-1].date()}):")
+        for sym, w in targets.iloc[-1].items():
+            print(f"  {sym:<5} {w:.0%}")
+        print(f"  cash  {1 - targets.iloc[-1].sum():.0%}")
     else:
         engine = paper.run_paper(cfg, Path(args.ledger), Path(args.quotes) if args.quotes else None)
         print("\n".join(engine.log[-30:]))
