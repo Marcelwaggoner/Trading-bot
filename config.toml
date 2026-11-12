@@ -1,0 +1,45 @@
+# Mean-reversion options strategy. All money values in USD.
+# The signal comes from the underlying ETF; the trade is expressed with options
+# allowed at Robinhood options level 2 (long calls/puts, cash-secured puts).
+
+[universe]
+symbols = ["SPY", "QQQ", "IWM"]
+
+[signal]
+rsi_period = 2            # short RSI = classic mean-reversion trigger
+rsi_entry_long = 10       # buy the dip when RSI < this ...
+rsi_entry_short = 90      # ... fade the rip when RSI > this (bearish side)
+rsi_exit_long = 65        # dip has reverted -> close bullish position
+rsi_exit_short = 35       # rip has reverted -> close bearish position
+trend_sma = 200           # only buy dips above the 200-day SMA, only fade rips below it
+allow_bearish = true      # long puts on overbought-in-downtrend (ignored for cash_secured_put)
+
+[options]
+structure = "long_option" # "long_option" (buy calls/puts) or "cash_secured_put"
+target_dte = 30           # days to expiration at entry (rolled to the next Friday)
+long_delta = 0.50         # |delta| of the bought call/put
+csp_delta = 0.30          # |delta| of the sold put
+strike_increment = 1.0
+iv_multiplier = 1.15      # backtest IV = realized vol * this (implied usually > realized)
+iv_floor = 0.10
+vol_window = 20
+risk_free_rate = 0.04
+
+[exits]
+profit_target = 0.50      # close at +50% on premium (long) / 50% of premium captured (CSP)
+stop_loss = 0.50          # long: close at -50% of premium paid
+csp_stop_loss = 2.00      # CSP: close when loss = 2x premium received
+max_hold_days = 10
+min_dte_exit = 5          # never hold into the last week (gamma / assignment risk)
+
+[risk]
+starting_cash = 10000.0
+risk_per_trade = 0.02     # long options: premium paid <= 2% of equity
+csp_alloc_per_trade = 0.25 # CSP: collateral per trade <= 25% of equity
+max_positions = 3         # max concurrent positions (one per symbol)
+max_contracts = 10
+
+[costs]
+slippage_pct = 0.03       # pay/receive 3% worse than model mid (bid/ask spread)
+min_slippage = 0.01       # ...but at least $0.01 per share
+fee_per_contract = 0.03   # regulatory/exchange fees; Robinhood charges no commission

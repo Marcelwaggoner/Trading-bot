@@ -1,0 +1,14 @@
+{
+  "last_run": "2026-11-11",
+  "cash": 10000.0,
+  "equity": 10000.0,
+  "positions": [],
+  "pending": [],
+  "trades": [],
+  "equity_history": [
+    [
+      "2026-11-11",
+      10000.0
+    ]
+  ]
+}
