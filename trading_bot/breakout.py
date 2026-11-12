@@ -48,8 +48,8 @@ def load_universe(symbols: list[str], start: str = "2008-01-01", refresh: bool =
     """OHLCV per symbol (adjusted), downloaded in one batch and cached."""
     if CACHE.exists() and not refresh:
         data = pd.read_pickle(CACHE)
-        if set(symbols) <= set(data):
-            return {s: data[s] for s in symbols}
+        if set(symbols) | {"SPY"} <= set(data):
+            return {s: data[s] for s in symbols + ["SPY"]}
     import yfinance as yf
 
     raw = yf.download(symbols + ["SPY"], start=start, progress=False, auto_adjust=True,
