@@ -32,7 +32,16 @@ def load_bars(symbol: str, start: str = "2010-01-01", refresh: bool = False) -> 
     return df
 
 
-def features(bars: pd.DataFrame, cfg: Config) -> pd.DataFrame:
+def vol_index_for(symbol: str, cfg: Config) -> str:
+    if cfg.pricing_model != "calibrated":
+        return ""
+    from .calibration import fit
+
+    cal = fit(cfg.calibration_file)
+    return cal[symbol].vol_index if symbol in cal else "^VIX"
+
+
+def features(bars: pd.DataFrame, cfg: Config, symbol: str = "", refresh: bool = False) -> pd.DataFrame:
     close = bars["Close"].astype(float)
     out = pd.DataFrame(
         {
@@ -42,4 +51,9 @@ def features(bars: pd.DataFrame, cfg: Config) -> pd.DataFrame:
             "vol": realized_vol(close, cfg.vol_window),
         }
     )
+    idx = vol_index_for(symbol, cfg) if symbol else ""
+    if idx:
+        start = str(bars.index[0].date())
+        level = load_bars(idx, start, refresh)["Close"].astype(float) / 100
+        out["ivx"] = level.reindex(out.index).ffill()
     return out.dropna()

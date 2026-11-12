@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 
 from .config import Config
+from .calibration import SymbolCal, fit, implied_vol
 from .pricing import bs_price, expiry_for_dte, intrinsic, strike_for_delta, year_frac
 
 
@@ -19,6 +20,7 @@ class Bar:
     rsi: float
     sma: float
     vol: float
+    ivx: float = math.nan  # volatility-index level (decimal) for calibrated pricing
 
 
 @dataclass
@@ -110,20 +112,38 @@ class Engine:
         self.cfg = cfg
         self.pf = portfolio or Portfolio(cash=cfg.starting_cash)
         self.log: list[str] = []
+        self.cal: dict[str, SymbolCal] = (
+            fit(cfg.calibration_file) if cfg.pricing_model == "calibrated" else {}
+        )
+        self._bars: dict[str, Bar] = {}
 
     # ---- pricing helpers -------------------------------------------------
-    def _iv(self, bar: Bar) -> float:
+    def _cal(self, symbol: str, bar: Bar | None) -> SymbolCal | None:
+        if bar is None or math.isnan(bar.ivx):
+            return None
+        return self.cal.get(symbol)
+
+    def _iv(self, bar: Bar, symbol: str = "", K: float | None = None, T: float = 0.0) -> float:
+        cal = self._cal(symbol, bar)
+        if cal is not None:
+            return implied_vol(cal, bar.ivx, bar.close, K if K else bar.close, T, self.cfg.iv_floor / 2)
         return max(bar.vol * self.cfg.iv_multiplier, self.cfg.iv_floor)
 
     def model_mark(self, p: Position, today: date, bar: Bar) -> float:
         if p.kind == "stock":
             return bar.close
         T = year_frac(today, p.expiry)
-        return bs_price(bar.close, p.strike, T, self.cfg.risk_free_rate, self._iv(bar), p.kind)
+        iv = self._iv(bar, p.symbol, p.strike, T)
+        return bs_price(bar.close, p.strike, T, self.cfg.risk_free_rate, iv, p.kind)
 
-    def _slip(self, price: float, kind: str = "call") -> float:
+    def _slip(self, price: float, kind: str = "call", symbol: str = "") -> float:
         if kind == "stock":
             return price * self.cfg.stock_slippage_pct
+        bar = self._bars.get(symbol)
+        cal = self._cal(symbol, bar)
+        if cal is not None:
+            stress = max(1.0, bar.ivx / cal.index_ref) if self.cfg.spread_stress else 1.0
+            return max(price * cal.half_spread * stress, self.cfg.min_slippage)
         return max(price * self.cfg.slippage_pct, self.cfg.min_slippage)
 
     def _fees(self, qty: float, kind: str = "call") -> float:
@@ -133,6 +153,7 @@ class Engine:
     def step(self, today: date, bars: dict[str, Bar], quotes: dict[str, float] | None = None) -> None:
         """Run one day. `quotes` optionally maps position label -> real option mid price."""
         quotes = quotes or {}
+        self._bars = bars
         self._execute_pending(today, bars, quotes)
         self._mark(today, bars, quotes)
         if self.cfg.structure == "core_dip":
@@ -235,7 +256,8 @@ class Engine:
             return self._open_shares(today, symbol, direction, bar)
         expiry = expiry_for_dte(today, cfg.target_dte)
         T = year_frac(today, expiry)
-        iv = self._iv(bar)
+        def iv(K: float) -> float:
+            return self._iv(bar, symbol, K, T)
         r = cfg.risk_free_rate
         if cfg.structure == "cash_secured_put":
             kind, side, delta = "put", "short", cfg.csp_delta
@@ -243,18 +265,18 @@ class Engine:
             kind = "call" if direction == "bullish" else "put"
             side, delta = "long", cfg.long_delta
         strike = strike_for_delta(bar.close, T, r, iv, kind, delta, cfg.strike_increment)
-        mid = bs_price(bar.close, strike, T, r, iv, kind)
+        mid = bs_price(bar.close, strike, T, r, iv(strike), kind)
         if mid < 0.05:
             self.log.append(f"{today} skip {symbol}: premium too small")
             return
         equity = self.pf.equity()
         if side == "long":
-            fill = mid + self._slip(mid)
+            fill = mid + self._slip(mid, kind, symbol)
             per_contract = fill * 100 + cfg.fee_per_contract
             n = min(math.floor(equity * cfg.risk_per_trade / per_contract), cfg.max_contracts)
             n = min(n, math.floor(self.pf.buying_power() / per_contract))
         else:
-            fill = max(mid - self._slip(mid), 0.01)
+            fill = max(mid - self._slip(mid, kind, symbol), 0.01)
             collateral = strike * 100
             n = min(math.floor(equity * cfg.csp_alloc_per_trade / collateral), cfg.max_contracts)
             n = min(n, math.floor(self.pf.buying_power() / collateral))
@@ -316,7 +338,7 @@ class Engine:
 
     def _close(self, p: Position, today: date, mid: float, reason: str, slippage: bool = True) -> None:
         m = p.multiplier
-        slip = self._slip(mid, p.kind) if slippage else 0.0
+        slip = self._slip(mid, p.kind, p.symbol) if slippage else 0.0
         if p.side == "long":
             fill = max(mid - slip, 0.0)
             self.pf.cash += fill * m * p.qty

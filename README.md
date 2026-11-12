@@ -49,21 +49,51 @@ Pass `--quotes quotes.json`, where each key is a position label (as printed by t
 
 Claude can fill this in for you from the Robinhood connector with `get_option_chains`, `get_option_instruments` and `get_option_quotes`.
 
-## How the backtest works (read before trusting results)
+## How option prices are modeled
 
-Free historical options prices are hard to get, so the backtest **prices options with Black-Scholes**:
+Free historical options prices are hard to get, so the backtest prices options with Black-Scholes. `pricing_model` in `config.toml` chooses how.
 
-- **Implied volatility:** 20-day realized volatility × 1.15. Real implied volatility usually runs higher than realized volatility, and jumps after selloffs, which is exactly when this strategy buys. The model misses that.
-- **Spread cost:** 3% of the premium on each side, at least $0.01.
-- **Not modeled:**
-  - Volatility skew.
-  - Early assignment.
-  - Dividends.
-- **Expiration:** an option still open at expiration settles at its intrinsic value.
+**`calibrated` (default)** is fitted to real Robinhood quotes. [`data/calibration/options_2026-11-11.json`](data/calibration/options_2026-11-11.json) holds 29 SPY/QQQ/IWM contracts (Dec-18 expiry, 37 days out) at the 2026-11-11 close, and [`calibration.py`](trading_bot/calibration.py) fits:
 
-Treat the results as a check on direction and order of magnitude, not as a P&L forecast.
+- **Implied volatility level:** at-the-money IV = volatility index × a fitted ratio. That's VIX × 0.82 for SPY, VXN × 0.88 for QQQ, and VIX × 1.04 for IWM (Yahoo has no data for RVX, the Russell 2000 index).
+- **Volatility skew:** IV goes up for strikes below spot and down for strikes above it, fitted separately on each side against ln(K/S)/√T. For SPY it reproduces the real smile within about 0.6 volatility points from the 710 strike to the 800 strike.
+- **Bid/ask cost:** each fill pays the fitted half-spread: 0.32% of the option price for SPY, 0.80% for QQQ and 0.71% for IWM. It's scaled up by (vol index ÷ snapshot level) when volatility spikes, because spreads widen in selloffs.
 
-## Results so far (2016-01 → 2026-11, daily)
+**`realized`** is the original model: realized vol × 1.15 as IV, no skew, and a flat 3% cost each way. The snapshot showed it charged roughly 10× too much in trading costs, and gave SPY about 26% IV when the real figure was 14.4%.
+
+### Checking against real prices
+
+`scripts/validate_pricing.py` replays daily Robinhood closes for three real contracts, Aug–Nov 2026, saved in [`data/validation/`](data/validation/option_closes_2026-08_11.json):
+
+| Contract | Calibrated: mean error, 37–60 days left | Old: mean error, 37–60 days left | Daily-change correlation (calibrated / old) |
+|---|---|---|---|
+| SPY 760 call | +4.0% | +11.7% | 0.957 / 0.924 |
+| SPY 745 put | −1.3% | −20.7% | 0.987 / 0.938 |
+| QQQ 660 put | −1.5% | −5.8% | 0.982 / 0.927 |
+
+With more than 60 days left the model underprices by 5–30%. That's because longer-dated options carry more implied volatility than 30-day VIX shows, and the model has no adjustment for it. It doesn't affect the strategies here, which only hold options with 5–37 days left. The 37–60-day window includes the snapshot date itself, so it isn't fully out-of-sample.
+
+**Still not modeled:**
+
+- Early assignment and dividends.
+- Interest earned on idle cash or on cash-secured-put collateral. This understates the CSP results in particular.
+- How the skew and spreads change over time. Both are frozen at one day's snapshot, apart from the spread widening in selloffs.
+
+### Options results with calibrated pricing (SPY/QQQ/IWM)
+
+| Variant | 2016–now: CAGR / DD / Sharpe / PF | 2005–2015: CAGR / DD / Sharpe / PF |
+|---|---|---|
+| `long_option` $10k | +0.3% / −3% / 0.24 / 1.49 (29 trades) | +3.0% / −11% / 0.53 / 1.34 |
+| `long_option` $100k | +0.5% / −28% / 0.11 / 1.06 | +2.4% / −10% / 0.48 / 1.33 |
+| `long_option` $100k, calls only | +0.6% / −24% / 0.14 / 1.09 | +1.9% / −8% / 0.42 / 1.33 |
+| `cash_secured_put` $100k | +0.2% / −2% / 0.21 / 1.28 | +1.0% / −4% / 0.68 / **2.02** |
+| *Same rows, old `realized` pricing* | | |
+| `long_option` $100k | +0.4% / −22% / 0.09 / 1.05 | +1.4% / −10% / 0.27 / 1.19 |
+| `cash_secured_put` $100k | −0.2% / −4% / −0.19 / 0.80 | −0.1% / −6% / −0.04 / 0.95 |
+
+Realistic prices mostly help the **cash-secured puts**. They go from losing money to a profit factor of 1.3–2.0 and a 71–76% win rate with small drawdowns. CAGR stays tiny because the collateral sits idle and earns 0% in the model. Buying calls and puts stays roughly break-even since 2016.
+
+## Earlier results with the old `realized` pricing (2016-01 → 2026-11, daily)
 
 | Variant | CAGR | Max DD | Sharpe | Trades | Profit factor |
 |---|---|---|---|---|---|

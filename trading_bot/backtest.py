@@ -12,7 +12,7 @@ from .engine import Bar, Engine
 
 
 def build_frames(cfg: Config, start: str, refresh: bool = False) -> dict[str, pd.DataFrame]:
-    return {s: features(load_bars(s, start, refresh), cfg) for s in cfg.symbols}
+    return {s: features(load_bars(s, start, refresh), cfg, s, refresh) for s in cfg.symbols}
 
 
 def run(cfg: Config, frames: dict[str, pd.DataFrame], start: str | None = None, end: str | None = None):

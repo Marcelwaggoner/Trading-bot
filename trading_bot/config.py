@@ -18,6 +18,9 @@ class Config:
     allow_bearish: bool = True
     # options
     structure: str = "long_option"
+    pricing_model: str = "calibrated"  # "calibrated" (vol index + skew + real spreads) or "realized"
+    calibration_file: str = "data/calibration/options_2026-11-11.json"
+    spread_stress: bool = True          # widen spreads in proportion to the vol index vs snapshot
     target_dte: int = 30
     long_delta: float = 0.50
     csp_delta: float = 0.30
@@ -52,6 +55,8 @@ class Config:
     core_weight: float = 0.80
 
     def __post_init__(self) -> None:
+        if self.pricing_model not in ("calibrated", "realized"):
+            raise ValueError(f"unknown pricing_model {self.pricing_model!r}")
         if self.structure not in ("long_option", "cash_secured_put", "shares", "core_dip"):
             raise ValueError(f"unknown structure {self.structure!r}")
 

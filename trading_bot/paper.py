@@ -56,7 +56,8 @@ def save_ledger(path: Path, pf: Portfolio, meta: dict) -> None:
 def run_paper(cfg: Config, ledger: Path, quotes_path: Path | None = None) -> Engine:
     pf, meta = load_ledger(ledger, cfg)
     engine = Engine(cfg, pf)
-    frames = {s: features(load_bars(s, "2015-01-01", refresh=True), cfg) for s in cfg.symbols}
+    frames = {s: features(load_bars(s, "2015-01-01", refresh=True), cfg, s, refresh=True)
+              for s in cfg.symbols}
     quotes = json.loads(quotes_path.read_text()) if quotes_path else {}
 
     for s, f in frames.items():

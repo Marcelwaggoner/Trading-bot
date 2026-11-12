@@ -36,9 +36,12 @@ def bs_delta(S: float, K: float, T: float, r: float, sigma: float, kind: str) ->
 
 
 def strike_for_delta(
-    S: float, T: float, r: float, sigma: float, kind: str, target: float, increment: float
+    S: float, T: float, r: float, sigma, kind: str, target: float, increment: float
 ) -> float:
-    """Strike on the `increment` grid whose |delta| is closest to `target`."""
+    """Strike on the `increment` grid whose |delta| is closest to `target`.
+
+    `sigma` is a float or a callable K -> IV (to respect the volatility skew)."""
+    sig = sigma if callable(sigma) else (lambda _k: sigma)
     center = round(S / increment) * increment
     span = max(int(S * 0.5 / increment), 5)
     best_k, best_err = center, float("inf")
@@ -46,7 +49,7 @@ def strike_for_delta(
         k = round(center + i * increment, 4)
         if k <= 0:
             continue
-        err = abs(abs(bs_delta(S, k, T, r, sigma, kind)) - target)
+        err = abs(abs(bs_delta(S, k, T, r, sig(k), kind)) - target)
         if err < best_err:
             best_k, best_err = k, err
     return best_k

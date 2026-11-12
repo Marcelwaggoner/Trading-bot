@@ -15,6 +15,10 @@ trend_sma = 200           # only buy dips above the 200-day SMA, only fade rips 
 allow_bearish = true      # long puts on overbought-in-downtrend (ignored for cash_secured_put)
 
 [options]
+pricing_model = "calibrated"  # "calibrated": IV from VIX/VXN x fitted ratio + skew, spreads from real quotes
+                              # "realized":   old model, realized vol x iv_multiplier, flat slippage_pct
+calibration_file = "data/calibration/options_2026-11-11.json"
+spread_stress = true          # scale spreads by vol-index / snapshot level (wider in selloffs)
 structure = "shares"      # "shares" (default: only variant with an edge), "long_option", "cash_secured_put", or "core_dip"
 target_dte = 30           # days to expiration at entry (rolled to the next Friday)
 long_delta = 0.50         # |delta| of the bought call/put
@@ -50,6 +54,6 @@ core_symbol = "SPY"       # buy RSI(2) dips with the remaining cash (share_alloc
 core_weight = 0.80
 
 [costs]
-slippage_pct = 0.03       # pay/receive 3% worse than model mid (bid/ask spread)
+slippage_pct = 0.03       # "realized" model only: pay/receive 3% worse than model mid
 min_slippage = 0.01       # ...but at least $0.01 per share
 fee_per_contract = 0.03   # regulatory/exchange fees; Robinhood charges no commission
