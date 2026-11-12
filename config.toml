@@ -15,7 +15,7 @@ trend_sma = 200           # only buy dips above the 200-day SMA, only fade rips 
 allow_bearish = true      # long puts on overbought-in-downtrend (ignored for cash_secured_put)
 
 [options]
-structure = "long_option" # "long_option" (buy calls/puts) or "cash_secured_put"
+structure = "long_option" # "long_option" (buy calls/puts), "cash_secured_put", or "shares"
 target_dte = 30           # days to expiration at entry (rolled to the next Friday)
 long_delta = 0.50         # |delta| of the bought call/put
 csp_delta = 0.30          # |delta| of the sold put
@@ -38,6 +38,12 @@ risk_per_trade = 0.02     # long options: premium paid <= 2% of equity
 csp_alloc_per_trade = 0.25 # CSP: collateral per trade <= 25% of equity
 max_positions = 3         # max concurrent positions (one per symbol)
 max_contracts = 10
+
+[shares]                  # used when structure = "shares" (long-only, fractional)
+share_alloc_per_trade = 0.33 # fraction of equity per position
+share_profit_target = 0.0    # 0 disables; exits come from the RSI signal / time stop
+share_stop_loss = 0.0        # 0 disables
+stock_slippage_pct = 0.0005  # 5 bps per side for liquid ETFs
 
 [costs]
 slippage_pct = 0.03       # pay/receive 3% worse than model mid (bid/ask spread)

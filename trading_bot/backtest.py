@@ -19,14 +19,16 @@ def run(cfg: Config, frames: dict[str, pd.DataFrame], start: str | None = None, 
     dates = sorted(set().union(*(f.index for f in frames.values())))
     dates = [d for d in dates if (start is None or d >= pd.Timestamp(start)) and (end is None or d <= pd.Timestamp(end))]
     engine = Engine(cfg)
-    equity = []
+    equity, invested = [], []
     for ts in dates:
         bars = {
             s: Bar(**f.loc[ts].to_dict()) for s, f in frames.items() if ts in f.index
         }
         engine.step(ts.date(), bars)
         equity.append((ts, engine.pf.equity()))
+        invested.append(bool(engine.pf.positions))
     eq = pd.Series(dict(equity), name="equity")
+    eq.attrs["exposure"] = sum(invested) / len(invested) if invested else 0.0
     trades = pd.DataFrame([asdict(t) for t in engine.pf.trades])
     return engine, eq, trades
 
@@ -47,6 +49,7 @@ def metrics(eq: pd.Series, trades: pd.DataFrame, starting_cash: float) -> dict:
         "max_drawdown": dd.min(),
         "sharpe": (rets.mean() / rets.std() * math.sqrt(252)) if rets.std() > 0 else 0.0,
         "trades": len(trades),
+        "exposure": eq.attrs.get("exposure", 0.0),
     }
     if len(trades):
         wins = trades[trades.pnl > 0]
@@ -69,6 +72,7 @@ def benchmark(frames: dict[str, pd.DataFrame], eq: pd.Series, symbol: str) -> di
         "total_return": tot,
         "cagr": (1 + tot) ** (1 / years) - 1,
         "max_drawdown": (close / close.cummax() - 1).min(),
+        "sharpe": (lambda r: r.mean() / r.std() * math.sqrt(252))(close.pct_change().dropna()),
     }
 
 
@@ -81,8 +85,8 @@ def save(eq: pd.Series, trades: pd.DataFrame, out: Path) -> None:
 def fmt(m: dict) -> str:
     lines = []
     for k, v in m.items():
-        if isinstance(v, float) and k in {"total_return", "cagr", "max_drawdown", "win_rate"}:
-            v = f"{v:+.2%}" if k != "win_rate" else f"{v:.1%}"
+        if isinstance(v, float) and k in {"total_return", "cagr", "max_drawdown", "win_rate", "exposure"}:
+            v = f"{v:.1%}" if k in ("win_rate", "exposure") else f"{v:+.2%}"
         elif isinstance(v, float):
             v = f"{v:,.2f}"
         lines.append(f"  {k:<14} {v}")

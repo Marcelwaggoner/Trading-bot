@@ -107,3 +107,24 @@ def test_expired_option_settles_at_intrinsic():
     eng.step(p.expiry, {"XYZ": Bar(close=p.strike + 7, rsi=50, sma=90, vol=0.2)})
     t = eng.pf.trades[0]
     assert t.reason == "expired" and t.exit_price == pytest.approx(7)
+
+
+def test_shares_round_trip_long_only():
+    cfg = _cfg(structure="shares", stock_slippage_pct=0.0, max_positions=2)
+    eng = Engine(cfg)
+    d = date(2026, 3, 2)
+    eng.step(d, {"XYZ": Bar(close=100, rsi=5, sma=90, vol=0.2)})
+    eng.step(d + timedelta(days=1), {"XYZ": Bar(close=100, rsi=20, sma=90, vol=0.2)})
+    p = eng.pf.positions[0]
+    assert p.kind == "stock" and p.qty == pytest.approx(cfg.starting_cash * 0.33 / 100, rel=1e-5)
+    eng.step(d + timedelta(days=2), {"XYZ": Bar(close=110, rsi=80, sma=90, vol=0.2)})  # exit signal
+    eng.step(d + timedelta(days=3), {"XYZ": Bar(close=110, rsi=80, sma=90, vol=0.2)})
+    t = eng.pf.trades[0]
+    assert t.reason == "signal_exit" and t.pnl == pytest.approx(p.qty * 10)
+    assert eng.pf.cash == pytest.approx(cfg.starting_cash + t.pnl)
+
+
+def test_shares_never_short():
+    eng = Engine(_cfg(structure="shares"))
+    eng.step(date(2026, 3, 2), {"XYZ": Bar(close=80, rsi=95, sma=90, vol=0.2)})
+    assert eng.pf.pending == []

@@ -42,9 +42,14 @@ class Config:
     slippage_pct: float = 0.03
     min_slippage: float = 0.01
     fee_per_contract: float = 0.03
+    # shares structure
+    share_alloc_per_trade: float = 0.33
+    share_profit_target: float = 0.0   # 0 disables
+    share_stop_loss: float = 0.0       # 0 disables
+    stock_slippage_pct: float = 0.0005
 
     def __post_init__(self) -> None:
-        if self.structure not in ("long_option", "cash_secured_put"):
+        if self.structure not in ("long_option", "cash_secured_put", "shares"):
             raise ValueError(f"unknown structure {self.structure!r}")
 
     def override(self, key: str, value: str) -> None:

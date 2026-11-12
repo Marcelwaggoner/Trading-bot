@@ -24,27 +24,33 @@ class Bar:
 @dataclass
 class Position:
     symbol: str
-    kind: str          # "call" | "put"
+    kind: str          # "call" | "put" | "stock"
     side: str          # "long" | "short"
     strike: float
     expiry: date
-    contracts: int
+    qty: float          # contracts for options, (fractional) shares for stock
     entry_date: date
-    entry_price: float  # per-share premium actually paid/received
+    entry_price: float  # per-share price/premium actually paid/received
     direction: str      # "bullish" | "bearish" (the mean-reversion bet)
     mark: float = 0.0
 
     @property
+    def multiplier(self) -> int:
+        return 1 if self.kind == "stock" else 100
+
+    @property
     def label(self) -> str:
+        if self.kind == "stock":
+            return f"{self.symbol} shares"
         return f"{self.symbol} {self.expiry.isoformat()} {self.strike:g} {self.kind[0].upper()}"
 
     @property
     def collateral(self) -> float:
-        return self.strike * 100 * self.contracts if self.side == "short" else 0.0
+        return self.strike * 100 * self.qty if self.side == "short" else 0.0
 
     def value(self) -> float:
         sign = 1 if self.side == "long" else -1
-        return sign * self.mark * 100 * self.contracts
+        return sign * self.mark * self.multiplier * self.qty
 
     def pnl_pct(self) -> float:
         if self.entry_price <= 0:
@@ -60,7 +66,7 @@ class Trade:
     label: str
     side: str
     direction: str
-    contracts: int
+    qty: float
     entry_date: date
     exit_date: date
     entry_price: float
@@ -105,14 +111,18 @@ class Engine:
         return max(bar.vol * self.cfg.iv_multiplier, self.cfg.iv_floor)
 
     def model_mark(self, p: Position, today: date, bar: Bar) -> float:
+        if p.kind == "stock":
+            return bar.close
         T = year_frac(today, p.expiry)
         return bs_price(bar.close, p.strike, T, self.cfg.risk_free_rate, self._iv(bar), p.kind)
 
-    def _slip(self, price: float) -> float:
+    def _slip(self, price: float, kind: str = "call") -> float:
+        if kind == "stock":
+            return price * self.cfg.stock_slippage_pct
         return max(price * self.cfg.slippage_pct, self.cfg.min_slippage)
 
-    def _fees(self, contracts: int) -> float:
-        return self.cfg.fee_per_contract * contracts
+    def _fees(self, qty: float, kind: str = "call") -> float:
+        return 0.0 if kind == "stock" else self.cfg.fee_per_contract * qty
 
     # ---- one trading day --------------------------------------------------
     def step(self, today: date, bars: dict[str, Bar], quotes: dict[str, float] | None = None) -> None:
@@ -163,10 +173,14 @@ class Engine:
             dte = (p.expiry - today).days
             held = (today - p.entry_date).days
             pnl = p.pnl_pct()
-            stop = cfg.csp_stop_loss if p.side == "short" else cfg.stop_loss
-            if pnl >= cfg.profit_target:
+            if p.kind == "stock":
+                target, stop = cfg.share_profit_target, cfg.share_stop_loss
+            else:
+                target = cfg.profit_target
+                stop = cfg.csp_stop_loss if p.side == "short" else cfg.stop_loss
+            if target > 0 and pnl >= target:
                 reason = "profit_target"
-            elif pnl <= -stop:
+            elif stop > 0 and pnl <= -stop:
                 reason = "stop_loss"
             elif p.direction == "bullish" and bar.rsi > cfg.rsi_exit_long:
                 reason = "signal_exit"
@@ -209,6 +223,8 @@ class Engine:
     # ---- fills -------------------------------------------------------------
     def _open(self, today: date, symbol: str, direction: str, bar: Bar) -> None:
         cfg = self.cfg
+        if cfg.structure == "shares":
+            return self._open_shares(today, symbol, direction, bar)
         expiry = expiry_for_dte(today, cfg.target_dte)
         T = year_frac(today, expiry)
         iv = self._iv(bar)
@@ -244,25 +260,41 @@ class Engine:
         verb = "BUY" if side == "long" else "SELL"
         self.log.append(f"{today} FILL {verb} {n}x {p.label} @ {fill:.2f}")
 
+    def _open_shares(self, today: date, symbol: str, direction: str, bar: Bar) -> None:
+        if direction != "bullish":  # long-only: no shorting
+            return
+        fill = bar.close + self._slip(bar.close, "stock")
+        budget = min(self.pf.equity() * self.cfg.share_alloc_per_trade, self.pf.buying_power())
+        qty = math.floor(budget / fill * 1e6) / 1e6  # fractional shares, 6 dp like Robinhood
+        if qty * fill < 1.0:
+            self.log.append(f"{today} skip {symbol}: not enough buying power")
+            return
+        p = Position(symbol, "stock", "long", 0.0, date.max, qty, today, fill, direction, mark=bar.close)
+        self.pf.cash -= fill * qty
+        self.pf.positions.append(p)
+        self.log.append(f"{today} FILL BUY {qty:g} {p.label} @ {fill:.2f}")
+
     def _close(self, p: Position, today: date, mid: float, reason: str, slippage: bool = True) -> None:
+        m = p.multiplier
+        slip = self._slip(mid, p.kind) if slippage else 0.0
         if p.side == "long":
-            fill = max(mid - (self._slip(mid) if slippage else 0), 0.0)
-            self.pf.cash += fill * 100 * p.contracts
-            pnl = (fill - p.entry_price) * 100 * p.contracts
+            fill = max(mid - slip, 0.0)
+            self.pf.cash += fill * m * p.qty
+            pnl = (fill - p.entry_price) * m * p.qty
         else:
-            fill = mid + (self._slip(mid) if slippage else 0)
-            self.pf.cash -= fill * 100 * p.contracts
-            pnl = (p.entry_price - fill) * 100 * p.contracts
-        exit_fee = self._fees(p.contracts) if slippage else 0.0  # no fee on expiration
+            fill = mid + slip
+            self.pf.cash -= fill * m * p.qty
+            pnl = (p.entry_price - fill) * m * p.qty
+        exit_fee = self._fees(p.qty, p.kind) if slippage else 0.0  # no fee on expiration
         self.pf.cash -= exit_fee
-        net = pnl - self._fees(p.contracts) - exit_fee  # entry fee was paid at open
+        net = pnl - self._fees(p.qty, p.kind) - exit_fee  # entry fee was paid at open
         self.pf.positions.remove(p)
         self.pf.trades.append(
-            Trade(p.symbol, p.label, p.side, p.direction, p.contracts, p.entry_date, today,
+            Trade(p.symbol, p.label, p.side, p.direction, p.qty, p.entry_date, today,
                   p.entry_price, fill, net, reason)
         )
         verb = "SELL" if p.side == "long" else "BUY"
-        self.log.append(f"{today} FILL {verb} {p.contracts}x {p.label} @ {fill:.2f} ({reason}) pnl {net:+.2f}")
+        self.log.append(f"{today} FILL {verb} {p.qty:g}x {p.label} @ {fill:.2f} ({reason}) pnl {net:+.2f}")
 
 
 def position_to_dict(p: Position) -> dict:

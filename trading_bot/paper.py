@@ -89,7 +89,7 @@ def summary(engine: Engine, cfg: Config) -> str:
         "Open positions:" if pf.positions else "Open positions: none",
     ]
     for p in pf.positions:
-        lines.append(f"  {p.side:5} {p.contracts}x {p.label}  entry {p.entry_price:.2f}  "
+        lines.append(f"  {p.side:5} {p.qty:g}x {p.label}  entry {p.entry_price:.2f}  "
                      f"mark {p.mark:.2f}  pnl {p.pnl_pct():+.0%}")
     lines.append("Orders queued for next session:" if pf.pending else "Orders queued for next session: none")
     for o in pf.pending:
