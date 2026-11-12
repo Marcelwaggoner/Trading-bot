@@ -78,8 +78,27 @@ What this shows:
 2. **$10k is too small for these ETFs.** One at-the-money SPY contract costs more than $1,000, so at 2% risk 606 of 630 signals were skipped. Raising the risk per trade to compensate blew up the account.
 3. **Cash-secured puts need about $70k of collateral per SPY contract**, so with $10k they can't trade at all.
 
+### Cheaper underlyings ($10k, up to 5 positions)
+
+ETFs: XLF, EEM, GDX, SLV, KRE, XLE, EWZ, FXI, ARKK, XLU. Stocks: F, BAC, T, INTC, PFE, CCL, AAL, VZ. Both groups were chosen from tickers that still exist today, so these numbers are biased upward (survivorship bias), most of all for the stocks.
+
+| Universe / structure | CAGR (3% costs) | Max DD | Profit factor | CAGR (zero costs) | PF (zero costs) |
+|---|---|---|---|---|---|
+| ETFs, `long_option` | −7.5% | −61% | 0.65 | −3.0% | 0.89 |
+| ETFs, `cash_secured_put` | +0.1% | −4% | 1.07 | +0.6% | 1.42 |
+| Stocks, `long_option` | −6.4% | −55% | 0.73 | −1.8% | 0.94 |
+| Stocks, `cash_secured_put` | −0.2% | −6% | 0.91 | +0.6% | 1.28 |
+
+Cheaper underlyings don't help. Long options lose money on these names **even with zero costs**, so the RSI(2) edge is concentrated in broad index ETFs. Cash-secured puts barely break even, because the cash they hold back sits idle most of the time.
+
+Reproduce one row with:
+
+```bash
+python -m trading_bot --set symbols=XLF,EEM,GDX,SLV,KRE,XLE,EWZ,FXI,ARKK,XLU \
+  --set max_positions=5 --set structure=cash_secured_put backtest
+```
+
 ### Ideas to try next
-- Cheaper or more volatile underlyings, so the strategy can place trades with $10k.
 - Debit spreads, which would need options level 3.
 - Real option-quote history in place of Black-Scholes.
 - Measuring actual spreads through Robinhood.

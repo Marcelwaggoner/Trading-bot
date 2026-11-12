@@ -47,6 +47,18 @@ class Config:
         if self.structure not in ("long_option", "cash_secured_put"):
             raise ValueError(f"unknown structure {self.structure!r}")
 
+    def override(self, key: str, value: str) -> None:
+        """Set a field from a command-line string, converting to the field's type."""
+        current = getattr(self, key)  # AttributeError for unknown keys
+        if isinstance(current, list):
+            new = [v.strip().upper() for v in value.split(",") if v.strip()]
+        elif isinstance(current, bool):
+            new = value.lower() in ("1", "true", "yes")
+        else:
+            new = type(current)(value)
+        setattr(self, key, new)
+        self.__post_init__()
+
     @classmethod
     def load(cls, path: str | Path) -> "Config":
         with open(path, "rb") as f:

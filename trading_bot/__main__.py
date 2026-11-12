@@ -11,6 +11,8 @@ from .config import Config
 def main() -> None:
     ap = argparse.ArgumentParser(prog="python -m trading_bot")
     ap.add_argument("--config", default="config.toml")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="override a config value, e.g. --set symbols=XLF,EEM --set max_positions=5")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     bt = sub.add_parser("backtest", help="simulate the strategy on historical data")
@@ -28,6 +30,8 @@ def main() -> None:
 
     args = ap.parse_args()
     cfg = Config.load(args.config)
+    for item in args.set:
+        cfg.override(*item.split("=", 1))
 
     if args.cmd == "backtest":
         if args.structure:
