@@ -7,9 +7,11 @@ A mean-reversion **options** strategy with a backtester and a paper trader. **It
 - **Signal:** short-term RSI (RSI(2)) on liquid ETFs (SPY, QQQ, IWM).
   - **Buy the dip:** RSI(2) < 10 while the price is above its 200-day moving average.
   - **Fade the rip** (optional): RSI(2) > 90 while the price is below its 200-day moving average.
-- **Trade:** limited to Robinhood options level 2. `options.structure` in `config.toml` picks one:
-  - `long_option`: buy a ~0.50-delta call (dip) or put (rip), about 30 days to expiration.
-  - `cash_secured_put`: sell a ~0.30-delta put on dips, with the cash to cover it set aside.
+- **Trade:** `options.structure` in `config.toml` picks one:
+  - `shares` (**default**): buy the ETF itself on dips. Long-only, fractional shares.
+  - `core_dip`: hold `core_weight` of the account in SPY, rebalanced monthly, and buy dips with the rest.
+  - `long_option`: buy a ~0.50-delta call (dip) or put (rip), about 30 days to expiration (options level 2).
+  - `cash_secured_put`: sell a ~0.30-delta put on dips, with the cash to cover it set aside (options level 2).
 - **Exits** (whichever comes first):
   - RSI moves back to normal.
   - Profit target or stop-loss hit.
@@ -119,6 +121,27 @@ What this shows:
 - **It's small in absolute terms.** It's invested only about 22% of the time, so its CAGR is a fraction of buy & hold. Idle cash earns nothing in this model, so with a cash yield (for example interest on uninvested cash) the real number would be somewhat higher.
 - **It doesn't work on sector, commodity or country ETFs, or on single stocks.**
 - **Options made it worse.** Wrapping the signal in options turned a profit factor of about 1.5 into roughly 1.0 or below, because of spreads and time decay. If you trade this, trade the shares.
+
+### Core SPY + buying dips (`structure = "core_dip"`)
+
+The account holds a fixed share in SPY, rebalanced monthly while no dip trade is open, and puts the remaining cash into RSI(2) dip buys. The control is the same SPY/cash split with the signal switched off, since the question is whether dip-buying beats leaving that cash parked.
+
+| Setup | 2016–now CAGR / DD / Sharpe | 2004–2015 CAGR / DD / Sharpe |
+|---|---|---|
+| 80% SPY + 20% idle cash (control) | +12.0% / −27% / 0.88 | +6.1% / −47% / 0.46 |
+| 80% SPY + dips on SPY (20% × 1) | +12.5% / −28% / 0.88 | +6.5% / −47% / 0.48 |
+| 80% SPY + dips on SPY/QQQ/IWM (6.7% × 3) | +12.5% / −28% / 0.88 | +6.8% / −47% / 0.49 |
+| 70% SPY + 30% idle cash (control) | +10.5% / −24% / 0.88 | +5.4% / −42% / 0.46 |
+| 70% SPY + dips on SPY/QQQ/IWM (10% × 3) | +11.2% / −25% / 0.88 | +6.5% / −43% / 0.51 |
+| **100% SPY** | **+14.9% / −34% / 0.87** | **+7.3% / −55% / 0.46** |
+
+Dip-buying beats leaving the cash idle in both periods: about +0.5 to +1.1 points of CAGR at the same or slightly better Sharpe. It never beats holding 100% SPY on return. Choosing this setup is a decision about how much risk to take (a smaller drawdown in exchange for lower return), not a way to beat the index. Idle cash earns 0% in this model, so with interest on uninvested cash the controls would look a bit better, and the extra return from dip-buying would be smaller.
+
+Reproduce one row with:
+
+```bash
+python -m trading_bot --set structure=core_dip --set core_weight=0.7 --set share_alloc_per_trade=0.1 backtest
+```
 
 ### Ideas to try next
 - Debit spreads, which would need options level 3.

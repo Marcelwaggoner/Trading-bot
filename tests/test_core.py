@@ -128,3 +128,34 @@ def test_shares_never_short():
     eng = Engine(_cfg(structure="shares"))
     eng.step(date(2026, 3, 2), {"XYZ": Bar(close=80, rsi=95, sma=90, vol=0.2)})
     assert eng.pf.pending == []
+
+
+def test_core_dip_holds_core_and_trades_dips_separately():
+    cfg = _cfg(structure="core_dip", symbols=["SPY"], core_symbol="SPY", core_weight=0.8,
+               share_alloc_per_trade=0.2, stock_slippage_pct=0.0)
+    eng = Engine(cfg)
+    d = date(2026, 3, 2)
+    eng.step(d, {"SPY": Bar(close=100, rsi=5, sma=90, vol=0.2)})  # rebalance + dip signal
+    core = [p for p in eng.pf.positions if p.direction == "core"]
+    assert len(core) == 1 and core[0].qty == pytest.approx(800, rel=1e-5)
+    eng.step(d + timedelta(days=1), {"SPY": Bar(close=100, rsi=20, sma=90, vol=0.2)})
+    dips = eng.pf.trading_positions()
+    assert len(dips) == 1 and dips[0].qty * 100 == pytest.approx(20_000, rel=1e-3)
+    # dip exits; core stays
+    eng.step(d + timedelta(days=2), {"SPY": Bar(close=105, rsi=80, sma=90, vol=0.2)})
+    eng.step(d + timedelta(days=3), {"SPY": Bar(close=105, rsi=80, sma=90, vol=0.2)})
+    assert eng.pf.trading_positions() == []
+    assert [p.direction for p in eng.pf.positions] == ["core"]
+    assert eng.pf.equity() == pytest.approx(100_000 * 1.05, rel=1e-4)
+
+
+def test_core_dip_rebalances_once_per_month():
+    cfg = _cfg(structure="core_dip", symbols=["SPY"], core_symbol="SPY", rsi_entry_long=-1)
+    eng = Engine(cfg)
+    eng.step(date(2026, 3, 2), {"SPY": Bar(close=100, rsi=50, sma=90, vol=0.2)})
+    eng.step(date(2026, 3, 3), {"SPY": Bar(close=150, rsi=50, sma=90, vol=0.2)})
+    assert eng.pf.last_rebalance == "2026-03"
+    qty = eng.pf.positions[0].qty
+    eng.step(date(2026, 4, 1), {"SPY": Bar(close=150, rsi=50, sma=90, vol=0.2)})
+    assert eng.pf.positions[0].qty < qty  # trimmed back toward 80%
+    assert eng.pf.positions[0].value() == pytest.approx(eng.pf.equity() * 0.8, rel=1e-4)

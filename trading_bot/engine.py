@@ -31,7 +31,7 @@ class Position:
     qty: float          # contracts for options, (fractional) shares for stock
     entry_date: date
     entry_price: float  # per-share price/premium actually paid/received
-    direction: str      # "bullish" | "bearish" (the mean-reversion bet)
+    direction: str      # "bullish" | "bearish" (the mean-reversion bet) | "core" (buy-and-hold sleeve)
     mark: float = 0.0
 
     @property
@@ -41,7 +41,7 @@ class Position:
     @property
     def label(self) -> str:
         if self.kind == "stock":
-            return f"{self.symbol} shares"
+            return f"{self.symbol} {'core ' if self.direction == 'core' else ''}shares"
         return f"{self.symbol} {self.expiry.isoformat()} {self.strike:g} {self.kind[0].upper()}"
 
     @property
@@ -89,6 +89,11 @@ class Portfolio:
     positions: list[Position] = field(default_factory=list)
     trades: list[Trade] = field(default_factory=list)
     pending: list[Order] = field(default_factory=list)
+    last_rebalance: str = ""  # "YYYY-MM" of the last core rebalance (core_dip only)
+
+    def trading_positions(self) -> list[Position]:
+        """Signal-driven positions (excludes the core_dip buy-and-hold sleeve)."""
+        return [p for p in self.positions if p.direction != "core"]
 
     def equity(self) -> float:
         return self.cash + sum(p.value() for p in self.positions)
@@ -97,7 +102,7 @@ class Portfolio:
         return self.cash - sum(p.collateral for p in self.positions)
 
     def position_for(self, symbol: str) -> Position | None:
-        return next((p for p in self.positions if p.symbol == symbol), None)
+        return next((p for p in self.trading_positions() if p.symbol == symbol), None)
 
 
 class Engine:
@@ -130,6 +135,8 @@ class Engine:
         quotes = quotes or {}
         self._execute_pending(today, bars, quotes)
         self._mark(today, bars, quotes)
+        if self.cfg.structure == "core_dip":
+            self._rebalance_core(today, bars)
         self._settle_expired(today, bars)
         self._decide(today, bars)
 
@@ -165,7 +172,7 @@ class Engine:
     def _decide(self, today: date, bars: dict[str, Bar]) -> None:
         cfg = self.cfg
         # exits
-        for p in self.pf.positions:
+        for p in self.pf.trading_positions():
             bar = bars.get(p.symbol)
             if bar is None:
                 continue
@@ -195,8 +202,9 @@ class Engine:
                 self.log.append(f"{today} signal CLOSE {p.label} ({reason}, pnl {pnl:+.0%})")
 
         # entries
-        busy = {p.symbol for p in self.pf.positions} | {o.symbol for o in self.pf.pending}
-        slots = cfg.max_positions - len(self.pf.positions) - sum(
+        open_ = self.pf.trading_positions()
+        busy = {p.symbol for p in open_} | {o.symbol for o in self.pf.pending}
+        slots = cfg.max_positions - len(open_) - sum(
             o.action == "open" for o in self.pf.pending
         )
         for sym in cfg.symbols:
@@ -223,7 +231,7 @@ class Engine:
     # ---- fills -------------------------------------------------------------
     def _open(self, today: date, symbol: str, direction: str, bar: Bar) -> None:
         cfg = self.cfg
-        if cfg.structure == "shares":
+        if cfg.structure in ("shares", "core_dip"):
             return self._open_shares(today, symbol, direction, bar)
         expiry = expiry_for_dte(today, cfg.target_dte)
         T = year_frac(today, expiry)
@@ -259,6 +267,38 @@ class Engine:
         self.pf.positions.append(p)
         verb = "BUY" if side == "long" else "SELL"
         self.log.append(f"{today} FILL {verb} {n}x {p.label} @ {fill:.2f}")
+
+    def _rebalance_core(self, today: date, bars: dict[str, Bar]) -> None:
+        """Monthly: reset the buy-and-hold sleeve to core_weight of equity, while no dip trade is open."""
+        cfg, pf = self.cfg, self.pf
+        month = today.strftime("%Y-%m")
+        if cfg.core_symbol not in bars or pf.last_rebalance == month or pf.trading_positions():
+            return
+        price = bars[cfg.core_symbol].close
+        core = next((p for p in pf.positions if p.direction == "core"), None)
+        held = core.qty if core else 0.0
+        target = math.floor(pf.equity() * cfg.core_weight / price * 1e6) / 1e6
+        diff = target - held
+        pf.last_rebalance = month
+        if abs(diff) * price < max(1.0, pf.equity() * 0.01):  # skip tiny rebalances
+            return
+        if diff > 0:
+            fill = price + self._slip(price, "stock")
+            diff = min(diff, math.floor(pf.cash / fill * 1e6) / 1e6)
+            pf.cash -= diff * fill
+            if core:
+                core.entry_price = (core.entry_price * held + fill * diff) / (held + diff)
+                core.qty = held + diff
+            else:
+                core = Position(cfg.core_symbol, "stock", "long", 0.0, date.max, diff, today,
+                                fill, "core", mark=price)
+                pf.positions.append(core)
+            self.log.append(f"{today} REBALANCE BUY {diff:g} {core.label} @ {fill:.2f}")
+        else:
+            fill = price - self._slip(price, "stock")
+            pf.cash += -diff * fill
+            core.qty = held + diff
+            self.log.append(f"{today} REBALANCE SELL {-diff:g} {core.label} @ {fill:.2f}")
 
     def _open_shares(self, today: date, symbol: str, direction: str, bar: Bar) -> None:
         if direction != "bullish":  # long-only: no shorting

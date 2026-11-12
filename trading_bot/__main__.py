@@ -20,7 +20,7 @@ def main() -> None:
     bt.add_argument("--end")
     bt.add_argument("--refresh", action="store_true", help="re-download price data")
     bt.add_argument("--out", default="results")
-    bt.add_argument("--structure", choices=["long_option", "cash_secured_put", "shares"],
+    bt.add_argument("--structure", choices=["long_option", "cash_secured_put", "shares", "core_dip"],
                     help="override options.structure from the config")
     bt.add_argument("-v", "--verbose", action="store_true", help="print every signal and fill")
 

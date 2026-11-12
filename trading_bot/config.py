@@ -47,9 +47,12 @@ class Config:
     share_profit_target: float = 0.0   # 0 disables
     share_stop_loss: float = 0.0       # 0 disables
     stock_slippage_pct: float = 0.0005
+    # core_dip structure: buy-and-hold sleeve + RSI dip buys with the rest
+    core_symbol: str = "SPY"
+    core_weight: float = 0.80
 
     def __post_init__(self) -> None:
-        if self.structure not in ("long_option", "cash_secured_put", "shares"):
+        if self.structure not in ("long_option", "cash_secured_put", "shares", "core_dip"):
             raise ValueError(f"unknown structure {self.structure!r}")
 
     def override(self, key: str, value: str) -> None:
@@ -57,6 +60,8 @@ class Config:
         current = getattr(self, key)  # AttributeError for unknown keys
         if isinstance(current, list):
             new = [v.strip().upper() for v in value.split(",") if v.strip()]
+        elif isinstance(current, str):
+            new = value
         elif isinstance(current, bool):
             new = value.lower() in ("1", "true", "yes")
         else:

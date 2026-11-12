@@ -26,7 +26,7 @@ def run(cfg: Config, frames: dict[str, pd.DataFrame], start: str | None = None, 
         }
         engine.step(ts.date(), bars)
         equity.append((ts, engine.pf.equity()))
-        invested.append(bool(engine.pf.positions))
+        invested.append(bool(engine.pf.trading_positions()))
     eq = pd.Series(dict(equity), name="equity")
     eq.attrs["exposure"] = sum(invested) / len(invested) if invested else 0.0
     trades = pd.DataFrame([asdict(t) for t in engine.pf.trades])

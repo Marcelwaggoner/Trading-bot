@@ -30,6 +30,7 @@ def load_ledger(path: Path, cfg: Config) -> tuple[Portfolio, dict]:
             for t in raw["trades"]
         ],
         pending=[Order(**o) for o in raw["pending"]],
+        last_rebalance=raw.get("last_rebalance", ""),
     )
     return pf, {"last_run": raw.get("last_run"), "equity_history": raw.get("equity_history", [])}
 
@@ -42,6 +43,7 @@ def save_ledger(path: Path, pf: Portfolio, meta: dict) -> None:
         "equity": round(pf.equity(), 2),
         "positions": [position_to_dict(p) for p in pf.positions],
         "pending": [asdict(o) for o in pf.pending],
+        "last_rebalance": pf.last_rebalance,
         "trades": [
             {**asdict(t), "entry_date": t.entry_date.isoformat(), "exit_date": t.exit_date.isoformat()}
             for t in pf.trades
