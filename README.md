@@ -148,3 +148,7 @@ python -m trading_bot --set structure=core_dip --set core_weight=0.7 --set share
 - Real option-quote history in place of Black-Scholes.
 - Measuring actual spreads through Robinhood.
 - Out-of-sample testing before changing any thresholds.
+
+## Scheduled paper trading
+
+`scripts/paper_daily.sh` installs dependencies if needed, moves the ledger forward to the latest close, and appends the output to `paper/log.md`. A scheduled Claude task runs it every weekday after the market closes and commits `paper/` to this branch. That task has no Robinhood connector, so it can't place real orders.
