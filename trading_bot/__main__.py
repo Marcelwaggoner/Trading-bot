@@ -36,6 +36,10 @@ def main() -> None:
     tr.add_argument("--refresh", action="store_true")
     tr.add_argument("--out", default="results")
 
+    sc = sub.add_parser("scan", help="daily breakout scan: entry candidates + exits for held symbols")
+    sc.add_argument("--held", default="", help="held positions as SYMBOL:ENTRY_PRICE,... to check exits")
+    sc.add_argument("--json", action="store_true")
+
     pp = sub.add_parser("paper", help="advance the paper-trading ledger to the latest close")
     pp.add_argument("--ledger", default="paper/ledger.json")
     pp.add_argument("--quotes", help="JSON {position label: real option mid} to mark with live prices")
@@ -61,6 +65,23 @@ def main() -> None:
         print(backtest.fmt(backtest.benchmark(frames, eq, cfg.symbols[0])))
         backtest.save(eq, trades, Path(args.out))
         print(f"\nWrote {args.out}/equity.csv and {args.out}/trades.csv")
+    elif args.cmd == "scan":
+        from . import breakout
+
+        held = {k.upper(): float(v) for k, v in (x.split(":") for x in args.held.split(",") if x)}
+        p = breakout.BreakoutParams()
+        data = breakout.load_universe(sorted(set(breakout.UNIVERSE) | set(held)), refresh=True)
+        res = breakout.scan(data, p, held)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"Scan as of {res['asof']}  market filter (SPY > 200d): {'ON' if res['market_ok'] else 'OFF - no new buys'}")
+            print("Exit signals:" if res["exits"] else "Exit signals: none")
+            for s_, why in res["exits"]:
+                print(f"  SELL {s_}: {why}")
+            print("Breakout candidates:" if res["entries"] else "Breakout candidates: none")
+            for e in res["entries"]:
+                print(f"  BUY {e['symbol']:<5} close {e['close']:>9.2f}  volume {e['volume_x']}x avg  stop {e['stop']}")
     elif args.cmd == "trend":
         from . import trend
 
