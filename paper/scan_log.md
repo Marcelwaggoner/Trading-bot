@@ -30,3 +30,11 @@
 - Orders sent for approval: BUY DIS $25.00 market, regular hours (approval expires 2026-11-19 4:00 PM ET)
 - Buying power: $25.00 · account value $48.88
 
+## Breakout scan 2026-11-19
+
+- Market filter (SPY > 200-day): OFF (no new buys allowed)
+- Held: JNJ 0.087719 sh @ $285.00 avg; DIS 0.2048 sh @ $122.07 avg (filled today) — no exit signals
+- Breakout candidates: none (filter off; both slots full)
+- Orders sent for approval: none
+- Buying power: $0.00 · account value $47.95
+
