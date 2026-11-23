@@ -46,3 +46,11 @@
 - Orders sent for approval: none
 - Buying power: $0.00 · account value $47.97
 
+## Breakout scan 2026-11-23
+
+- Market filter (SPY > 200-day): OFF (SPY 722.29 vs 200d 730.47)
+- Held: JNJ 0.087719 sh @ $285.00 (close 270.05, exit line 266.17); DIS 0.2048 sh @ $122.07 (close 120.27, exit ~109.86) — no exit signals
+- Breakout candidates: none
+- Orders sent for approval: none
+- Buying power: $0.00 · account value $48.37
+
