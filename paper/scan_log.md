@@ -70,3 +70,7 @@
 - Orders sent for approval: none
 - Buying power: $0.00 · account value $49.82
 
+## Breakout scan 2026-11-26
+
+- US market closed (Thanksgiving); latest data still 2026-11-25. No signals, no orders.
+
