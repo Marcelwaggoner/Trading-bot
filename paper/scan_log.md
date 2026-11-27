@@ -74,3 +74,11 @@
 
 - US market closed (Thanksgiving); latest data still 2026-11-25. No signals, no orders.
 
+## Breakout scan 2026-11-27
+
+- Market filter (SPY > 200-day): OFF (SPY 728.32 vs 200d 730.98 — very close)
+- Held: JNJ 0.087719 sh @ $285.00 (close 275.51, exit line 264.85); DIS 0.2048 sh @ $122.07 (close 127.24, exit line 110.91) — no exit signals
+- Breakout candidates: none
+- Orders sent for approval: none
+- Buying power: $0.00 · account value $50.41
+
